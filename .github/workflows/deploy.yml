@@ -1,0 +1,186 @@
+name: Deploy Card API
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - beta
+          - prod
+        default: 'dev'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set environment variables
+        run: |
+          # Default to beta for main branch pushes, dev for manual workflow
+          ENV="${{ github.event.inputs.environment || 'beta' }}"
+
+          if [ "$ENV" = "beta" ]; then
+            echo "REGISTRY=acrsigmatiqshared.azurecr.io" >> $GITHUB_ENV
+            echo "IMAGE_NAME=sigmatiq/card-api" >> $GITHUB_ENV
+            echo "CONTAINER_APP_NAME=card-api-beta" >> $GITHUB_ENV
+            echo "RESOURCE_GROUP=rg-trading-beta" >> $GITHUB_ENV
+            echo "CONTAINER_ENV=cae-trading-beta" >> $GITHUB_ENV
+            echo "TARGET_PORT=8007" >> $GITHUB_ENV
+          else
+            # Dev environment also uses shared ACR
+            echo "REGISTRY=acrsigmatiqshared.azurecr.io" >> $GITHUB_ENV
+            echo "IMAGE_NAME=sigmatiq/card-api" >> $GITHUB_ENV
+            echo "CONTAINER_APP_NAME=card-api-dev" >> $GITHUB_ENV
+            echo "RESOURCE_GROUP=rg-app-dev" >> $GITHUB_ENV
+            echo "CONTAINER_ENV=cae-dev" >> $GITHUB_ENV
+            echo "TARGET_PORT=8007" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout Card API code
+        uses: actions/checkout@v4
+        with:
+          path: sigmatiq-card-api
+
+      - name: Checkout sigmatiq-shared library
+        uses: actions/checkout@v4
+        with:
+          repository: Sigmatiq/sigmatiq-shared
+          path: sigmatiq-shared
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        run: |
+          if [ "${{ env.REGISTRY }}" = "acrsigmatiqshared.azurecr.io" ]; then
+            az acr login --name acrsigmatiqshared
+          else
+            az acr login --name sigmatiqacr7db72550
+          fi
+
+      - name: Build and push Docker image
+        env:
+          TAG: ${{ github.event.inputs.environment || 'beta' }}-${{ github.run_number }}
+        run: |
+          docker build \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment || 'beta' }} \
+            --file sigmatiq-card-api/Dockerfile \
+            .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.environment || 'beta' }}
+
+      - name: Set managed identity resource ID
+        run: |
+          if [ "${{ github.event.inputs.environment || 'beta' }}" = "beta" ]; then
+            echo "MI_RESOURCE_ID=/subscriptions/b43edb5a-c679-48c7-bbb9-5c1329aab3a2/resourcegroups/rg-trading-beta/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mi-trading-beta" >> $GITHUB_ENV
+          else
+            echo "MI_RESOURCE_ID=/subscriptions/b43edb5a-c679-48c7-bbb9-5c1329aab3a2/resourcegroups/rg-app-dev/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mi-app-dev" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy to Azure Container Apps
+        env:
+          TAG: ${{ github.event.inputs.environment || 'beta' }}-${{ github.run_number }}
+        shell: pwsh
+        run: |
+          # Check if container app exists
+          $exists = az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Container app exists, updating..."
+
+            # Function to wait for provisioning to complete
+            function Wait-ForProvisioning {
+              Write-Host "Waiting for provisioning operation to complete..."
+              $maxAttempts = 30
+              $attempt = 0
+              do {
+                Start-Sleep -Seconds 10
+                $state = az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query "properties.provisioningState" -o tsv
+                Write-Host "  Provisioning state: $state (attempt $($attempt + 1)/$maxAttempts)"
+                $attempt++
+                if ($state -eq "Succeeded") {
+                  Write-Host "  Provisioning completed successfully"
+                  return $true
+                }
+              } while ($attempt -lt $maxAttempts)
+              Write-Host "  Timeout waiting for provisioning"
+              return $false
+            }
+
+            # Assign user-assigned managed identity to existing app
+            Write-Host "Assigning managed identity..."
+            az containerapp identity assign `
+              --name ${{ env.CONTAINER_APP_NAME }} `
+              --resource-group ${{ env.RESOURCE_GROUP }} `
+              --user-assigned ${{ env.MI_RESOURCE_ID }}
+
+            Wait-ForProvisioning | Out-Null
+
+            # Configure registry with managed identity (remove old config first)
+            Write-Host "Configuring registry..."
+            az containerapp registry remove `
+              --name ${{ env.CONTAINER_APP_NAME }} `
+              --resource-group ${{ env.RESOURCE_GROUP }} `
+              --server ${{ env.REGISTRY }} 2>$null
+
+            az containerapp registry set `
+              --name ${{ env.CONTAINER_APP_NAME }} `
+              --resource-group ${{ env.RESOURCE_GROUP }} `
+              --server ${{ env.REGISTRY }} `
+              --identity ${{ env.MI_RESOURCE_ID }}
+
+            Wait-ForProvisioning | Out-Null
+
+            # Update image
+            Write-Host "Updating container image..."
+            az containerapp update `
+              --name ${{ env.CONTAINER_APP_NAME }} `
+              --resource-group ${{ env.RESOURCE_GROUP }} `
+              --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+          } else {
+            Write-Host "Container app does not exist, creating..."
+            az containerapp create `
+              --name ${{ env.CONTAINER_APP_NAME }} `
+              --resource-group ${{ env.RESOURCE_GROUP }} `
+              --environment ${{ env.CONTAINER_ENV }} `
+              --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} `
+              --target-port ${{ env.TARGET_PORT }} `
+              --ingress external `
+              --min-replicas 1 `
+              --max-replicas 3 `
+              --cpu 0.5 `
+              --memory 1.0Gi `
+              --registry-server ${{ env.REGISTRY }} `
+              --user-assigned ${{ env.MI_RESOURCE_ID }} `
+              --registry-identity ${{ env.MI_RESOURCE_ID }}
+          }
+
+      - name: Get Container App URL
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          echo "🚀 Card API deployed to: https://$FQDN"
+          echo "📋 Health check: https://$FQDN/healthz"
+          echo "📚 API Docs: https://$FQDN/docs"
