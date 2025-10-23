@@ -29,6 +29,17 @@ class CardCategory(str, Enum):
     fundamental = "fundamental"
 
 
+class CardEducation(BaseModel):
+    """Educational content for beginners."""
+
+    short_description: Optional[str] = Field(None, description="One sentence plain-language summary")
+    long_description: Optional[str] = Field(None, description="2-3 sentences with context")
+    when_to_use: Optional[str] = Field(None, description="Guidance on when this card is useful")
+    how_to_interpret: Optional[str] = Field(None, description="How to read the results")
+    use_case_example: Optional[str] = Field(None, description="Real-world scenario")
+    educational_tip: Optional[str] = Field(None, description="Learning point for beginners")
+
+
 class CardMeta(BaseModel):
     """Metadata about the card response."""
 
@@ -48,6 +59,9 @@ class CardMeta(BaseModel):
     timestamp: datetime = Field(
         default_factory=datetime.utcnow, description="Response generation timestamp"
     )
+    education: Optional[CardEducation] = Field(None, description="Beginner-friendly educational content")
+    skill_levels: list[str] = Field(default_factory=lambda: ["beginner"], description="Target skill levels")
+    tags: list[str] = Field(default_factory=list, description="Discovery tags")
 
 
 class CardResponse(BaseModel):
@@ -96,6 +110,16 @@ class CardCatalogEntry(BaseModel):
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
+
+    # Beginner-friendly fields
+    short_description: Optional[str] = None
+    long_description: Optional[str] = None
+    when_to_use: Optional[str] = None
+    how_to_interpret: Optional[str] = None
+    use_case_example: Optional[str] = None
+    educational_tip: Optional[str] = None
+    skill_levels: list[str] = Field(default_factory=lambda: ["beginner"])
+    tags: list[str] = Field(default_factory=list)
 
 
 class CardUsageLog(BaseModel):

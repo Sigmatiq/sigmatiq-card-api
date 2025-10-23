@@ -24,7 +24,7 @@ from fastapi import HTTPException
 from sigmatiq_shared.cache import get_kv_cache, simple_key
 
 from ..handlers.base import BaseCardHandler
-from ..models.cards import CardCatalogEntry, CardCategory, CardMeta, CardMode, CardResponse
+from ..models.cards import CardCatalogEntry, CardCategory, CardEducation, CardMeta, CardMode, CardResponse
 from .usage_tracking import UsageTrackingService
 
 
@@ -75,7 +75,10 @@ class CardService:
         """
         query = """
             SELECT card_id, title, description, category, requires_symbol,
-                   minimum_tier, is_active, created_at, updated_at
+                   minimum_tier, is_active, created_at, updated_at,
+                   short_description, long_description, when_to_use,
+                   how_to_interpret, use_case_example, educational_tip,
+                   skill_levels, tags
             FROM cd.cards_catalog
             WHERE card_id = $1
         """
@@ -213,6 +216,18 @@ class CardService:
             card_data_clean = {k: v for k, v in card_data.items() if k != "_cache_metadata"}
 
             # 6. Build response
+            # Build education object if fields are available
+            education = None
+            if card_meta.short_description or card_meta.long_description:
+                education = CardEducation(
+                    short_description=card_meta.short_description,
+                    long_description=card_meta.long_description,
+                    when_to_use=card_meta.when_to_use,
+                    how_to_interpret=card_meta.how_to_interpret,
+                    use_case_example=card_meta.use_case_example,
+                    educational_tip=card_meta.educational_tip,
+                )
+
             meta = CardMeta(
                 card_id=card_id,
                 mode=mode,
@@ -224,6 +239,9 @@ class CardService:
                 fallback_applied=fallback_applied,
                 data_source="postgresql",
                 timestamp=datetime.utcnow(),
+                education=education,
+                skill_levels=card_meta.skill_levels or ["beginner"],
+                tags=card_meta.tags or [],
             )
 
             response = CardResponse(card_id=card_id, mode=mode, data=card_data_clean, meta=meta)
