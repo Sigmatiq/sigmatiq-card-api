@@ -1,0 +1,50 @@
+name: Compliance Lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check for sensitive data
+        run: |
+          # Check for potential secrets in code
+          if grep -r "POLYGON_API_KEY.*=" . --exclude-dir=.git --exclude-dir=venv --exclude-dir=.venv --exclude=.env* --exclude=*.md; then
+            echo "❌ Found potential hardcoded API keys"
+            exit 1
+          fi
+
+          if grep -r "password.*=.*['\"]" . --exclude-dir=.git --exclude-dir=venv --exclude-dir=.venv --exclude=.env* --exclude=*.md | grep -v "password: password"; then
+            echo "❌ Found potential hardcoded passwords"
+            exit 1
+          fi
+
+          echo "✅ No hardcoded secrets found"
+
+      - name: Check for Polygon data exposure
+        run: |
+          # Check that raw Polygon data is not exposed directly
+          if grep -r "polygon/quotes\|polygon/bars\|polygon/options/chain" sigmatiq_card_api/ --include="*.py" | grep -v "# BLOCKED"; then
+            echo "❌ Found potential raw Polygon data exposure"
+            echo "Card API should only expose derived analytics, not raw market data"
+            exit 1
+          fi
+
+          echo "✅ No raw Polygon data exposure found"
+
+      - name: Check environment variable usage
+        run: |
+          # Ensure environment variables are loaded from config, not hardcoded
+          if grep -r "os.environ\[" sigmatiq_card_api/ --include="*.py" | grep -v "os.environ.get"; then
+            echo "⚠️  Warning: Use os.environ.get() instead of os.environ[] for safer access"
+          fi
+
+          echo "✅ Environment variable check complete"
