@@ -6,10 +6,10 @@ Market data cards API providing both EOD (end-of-day) and Live (real-time) forma
 
 The Card API provides pre-formatted, beginner-friendly market data cards for UI integration. It offers:
 
-- **EOD Cards** (`/api/v1/cards/*`) - Historical end-of-day data from PostgreSQL
-- **Live Cards** (`/api/v1/live/cards/*`) - Real-time data from Polygon API (Phase 2)
-- **Data Endpoints** (`/api/v1/data/*`) - Raw database access (Phase 3)
-- **Live Data** (`/api/v1/live/data/*`) - Raw real-time data (Phase 4)
+- EOD Cards (`/api/v1/cards/*`) - Historical end-of-day data from PostgreSQL
+- Live Cards (`/api/v1/live/cards/*`) - Real-time data from Polygon API (Phase 2)
+- Data Endpoints (`/api/v1/data/*`) - Raw database access (Phase 3)
+- Live Data (`/api/v1/live/data/*`) - Raw real-time data (Phase 4)
 
 ## Quick Start
 
@@ -49,37 +49,37 @@ curl -H "X-User-Id: test" \
 
 ## Card Modes
 
-- **beginner**: Plain language, educational tips, simplified metrics
-- **intermediate**: More technical terms, additional indicators
-- **advanced**: Full technical detail, all available metrics
+- beginner: Plain language, educational tips, simplified metrics
+- intermediate: More technical terms, additional indicators
+- advanced: Full technical detail, all available metrics
 
 ## Architecture
 
 ```
 sigmatiq_card_api/
-├── app.py                     # FastAPI application
-├── routes/
-│   └── cards.py               # Card endpoints
-├── services/
-│   ├── card_service.py        # Orchestration layer
-│   └── usage_tracking.py      # Analytics logging
-├── handlers/
-│   ├── base.py                # Base handler class
-│   ├── market_breadth.py      # Market breadth card
-│   ├── ticker_performance.py  # Ticker performance card
-│   └── index_heatmap.py       # Index heatmap card
-├── models/
-│   └── cards.py               # Pydantic models
-└── migrations/
-    └── 0001_cards_tables.sql  # Database schema
+├─ app.py                     # FastAPI application
+├─ routes/
+│  └─ cards.py                # Card endpoints
+├─ services/
+│  ├─ card_service.py         # Orchestration layer
+│  └─ usage_tracking.py       # Analytics logging
+├─ handlers/
+│  ├─ base.py                 # Base handler class
+│  ├─ market_breadth.py       # Market breadth card
+│  ├─ ticker_performance.py   # Ticker performance card
+│  └─ index_heatmap.py        # Index heatmap card
+├─ models/
+│  └─ cards.py                # Pydantic models
+└─ migrations/
+   └─ 0001_cards_tables.sql   # Database schema
 ```
 
 ## Database Schema
 
 Two main tables:
 
-- `sb.cards_catalog` - Card registry (metadata, feature flags)
-- `sb.cards_usage_log` - Usage analytics (non-blocking async logging)
+- `cd.cards_catalog` - Card registry (metadata, feature flags)
+- `cd.cards_usage_log` - Usage analytics (non-blocking async logging)
 
 ## Future Monetization
 
@@ -91,10 +91,10 @@ The architecture is designed to extend easily for monetization:
 
 ## Phase Roadmap
 
-- ✅ **Phase 1** (TODAY): EOD Cards - 3 cards implemented
-- **Phase 2** (Week 2): Live Cards - Real-time data via Polygon
-- **Phase 3** (Week 2): EOD Data - Raw database endpoints
-- **Phase 4** (Week 3): Live Data - Raw real-time endpoints
+- Phase 1 (TODAY): EOD Cards - 3 cards implemented
+- Phase 2 (Week 2): Live Cards - Real-time data via Polygon
+- Phase 3 (Week 2): EOD Data - Raw database endpoints
+- Phase 4 (Week 3): Live Data - Raw real-time endpoints
 
 ## Development
 
@@ -115,3 +115,4 @@ ruff check sigmatiq_card_api/
 ## License
 
 Proprietary - Sigmatiq Platform
+
