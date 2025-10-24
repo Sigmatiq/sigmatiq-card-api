@@ -76,13 +76,32 @@ class UnusualOptionsHandler(BaseCardHandler):
         else:
             move_text = "Expected move data not available."
 
+
+        # Normalized labels/text to ensure clean output
+        if iv30 is None:
+            iv_label_norm = "No IV data"
+            iv_expl_norm = "Options data not available."
+        elif iv30 > 50:
+            iv_label_norm = "High Volatility"
+            iv_expl_norm = f"Options traders expect big moves. IV is {iv30:.0f}%."
+        elif iv30 > 30:
+            iv_label_norm = "Moderate Volatility"
+            iv_expl_norm = f"Options showing normal activity. IV is {iv30:.0f}%."
+        else:
+            iv_label_norm = "Low Volatility"
+            iv_expl_norm = f"Options are cheap. Market expects small moves. IV is {iv30:.0f}%."
+        if expected_move_1d:
+            move_text_norm = f"Market expects {symbol} to move +/-{expected_move_1d:.1f}% tomorrow."
+        else:
+            move_text_norm = "Expected move data not available."
         return {
             "symbol": symbol,
-            "volatility": iv_label,
-            "explanation": iv_explanation,
-            "expected_move": move_text,
+            "volatility": iv_label_norm,
+            "explanation": iv_expl_norm,
+            "expected_move": move_text_norm,
             "what_it_means": "High IV = expensive options, big expected moves. Low IV = cheap options, small expected moves.",
             "tip": self._add_educational_tip("unusual_options", CardMode.beginner),
+            "strategy_hint": self._build_strategy_hint(iv30, row["features"] if isinstance(row, dict) or hasattr(row, "keys") else {}),
         }
 
     def _format_intermediate(self, symbol: str, row: asyncpg.Record) -> dict[str, Any]:
@@ -114,6 +133,49 @@ class UnusualOptionsHandler(BaseCardHandler):
             },
             "additional_features": features,
             "signals": self._generate_options_signals(iv30, skew, expected_move_1d, gex),
+            "strategy_hint": self._build_strategy_hint(iv30, features),
+        }
+
+    def _build_strategy_hint(self, iv30: Optional[float], features: Any) -> dict[str, Any]:
+        """Provide beginner-safe options strategy guidance."""
+        # Determine IV regime
+        if iv30 is None:
+            iv_regime = "Unknown"
+        elif iv30 > 50:
+            iv_regime = "High"
+        elif iv30 > 30:
+            iv_regime = "Moderate"
+        else:
+            iv_regime = "Low"
+
+        # Try to extract days to earnings from features
+        days_to_earnings = None
+        try:
+            if isinstance(features, dict):
+                for k in ("days_to_earnings", "earnings_in_days", "earnings_days"):
+                    if k in features and features[k] is not None:
+                        days_to_earnings = int(features[k])
+                        break
+        except Exception:
+            pass
+
+        # Suggestion/caution
+        if iv_regime == "High":
+            suggestion = "Prefer defined-risk (debit spreads); avoid naked premium"
+        elif iv_regime == "Low":
+            suggestion = "Options cheaper; consider debit strategies or stock"
+        else:
+            suggestion = "Use defined-risk structures; be selective"
+
+        caution = None
+        if days_to_earnings is not None and days_to_earnings <= 7:
+            caution = "Earnings soon: elevated gap risk; avoid short vol"
+
+        return {
+            "iv_regime": iv_regime,
+            "event_window_days": days_to_earnings,
+            "suggestion": suggestion,
+            "caution": caution,
         }
 
     def _format_advanced(self, symbol: str, row: asyncpg.Record) -> dict[str, Any]:

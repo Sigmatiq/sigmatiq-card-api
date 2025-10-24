@@ -45,6 +45,7 @@ class IndexHeatmapHandler(BaseCardHandler):
         query = """
             SELECT
                 symbol,
+                trading_date,
                 close,
                 r_1d_pct,
                 r_5d_pct,
@@ -139,6 +140,7 @@ class IndexHeatmapHandler(BaseCardHandler):
             },
             "market_mood": self._get_market_mood([idx["change_pct"] for idx in indices]),
             "educational_tip": self._add_educational_tip("index_heatmap", CardMode.beginner),
+            "bias_block": self._build_bias_block(indices_data),
         }
 
     def _format_intermediate(self, indices_data: dict) -> dict[str, Any]:
@@ -170,6 +172,7 @@ class IndexHeatmapHandler(BaseCardHandler):
             "rotation_analysis": rotation,
             "strongest_timeframe": self._get_strongest_timeframe(indices),
             "correlation": self._assess_correlation(indices),
+            "bias_block": self._build_bias_block(indices_data),
         }
 
     def _format_advanced(self, indices_data: dict) -> dict[str, Any]:
@@ -193,8 +196,33 @@ class IndexHeatmapHandler(BaseCardHandler):
 
         return {
             "indices": indices,
-            "timestamp": str(indices_data["SPY"]["trading_date"]) if "SPY" in indices_data else None,
+            "timestamp": (
+                indices_data["SPY"]["trading_date"].isoformat()
+                if "SPY" in indices_data and indices_data["SPY"].get("trading_date")
+                else None
+            ),
+            "bias_block": self._build_bias_block(indices_data),
         }
+
+    def _build_bias_block(self, indices_data: dict) -> dict[str, Any]:
+        """Construct bias from index performance dispersion and leadership."""
+        spy = (indices_data.get("SPY") or {}).get("r_1d_pct") or 0
+        qqq = (indices_data.get("QQQ") or {}).get("r_1d_pct") or 0
+        iwm = (indices_data.get("IWM") or {}).get("r_1d_pct") or 0
+        changes = [spy, qqq, iwm]
+        avg_change = sum(changes) / len(changes) if changes else 0
+        positive_count = sum(1 for c in changes if c > 0)
+        if positive_count == len(changes) and avg_change > 0:
+            bias = "risk_on"
+        elif positive_count == 0 and avg_change < 0:
+            bias = "risk_off"
+        else:
+            bias = "neutral"
+        focus = (
+            "growth/tech leadership" if qqq >= spy and spy >= iwm else "small-cap strength" if iwm >= spy else "broad market"
+        )
+        guardrails = "If leadership flips intraday, avoid adding risk"
+        return {"bias": bias, "focus": focus, "guardrails": guardrails}
 
     def _get_market_mood(self, changes: list[float]) -> str:
         """Determine overall market mood from index changes."""

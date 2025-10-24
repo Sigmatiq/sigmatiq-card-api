@@ -181,7 +181,15 @@ class CardService:
                 )
 
             # 3. Resolve trading date with fallback
-            actual_date, fallback_applied = await self.resolve_trading_date(date_param)
+            # If symbol provided (ticker cards), attempt symbol-aware fallback first
+            if symbol:
+                resolved = await self._resolve_trading_date_for_symbol(symbol, date_param)
+                if resolved is not None:
+                    actual_date, fallback_applied = resolved
+                else:
+                    actual_date, fallback_applied = await self.resolve_trading_date(date_param)
+            else:
+                actual_date, fallback_applied = await self.resolve_trading_date(date_param)
 
             # 4. Get handler
             if card_id not in self._handlers:
@@ -280,3 +288,28 @@ class CardService:
             )
 
             raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+    async def _resolve_trading_date_for_symbol(
+        self, symbol: str, target_date: Optional[date]
+    ) -> Optional[tuple[date, bool]]:
+        """Resolve trading date using symbol's latest available EOD within a 10-day window.
+
+        Tries to find most recent row for the symbol on or before target date in
+        sb.symbol_derived_eod. Returns (date, fallback_applied) or None if not found.
+        """
+        if target_date is None:
+            target_date = date.today()
+
+        query = """
+            SELECT trading_date
+            FROM sb.symbol_derived_eod
+            WHERE symbol = $1 AND trading_date <= $2 AND trading_date >= ($2 - INTERVAL '10 days')
+            ORDER BY trading_date DESC
+            LIMIT 1
+        """
+        async with self.backfill_pool.acquire() as conn:
+            row = await conn.fetchrow(query, (symbol or '').upper(), target_date)
+        if row and row.get("trading_date"):
+            d = row["trading_date"]
+            return d, d != target_date
+        return None

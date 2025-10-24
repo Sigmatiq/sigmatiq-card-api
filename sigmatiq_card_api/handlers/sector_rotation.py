@@ -115,6 +115,8 @@ class SectorRotationHandler(BaseCardHandler):
             ],
             "what_it_means": "Strong sectors show where investors are putting money. Weak sectors show where they're taking it out.",
             "tip": self._add_educational_tip("sector_rotation", CardMode.beginner),
+            "summary_clean": (f"{leaders[0]['name']} leading {leaders[0]['r_1d_pct']:+.1f}%" if leaders else "No data"),
+            "bias_block": self._build_bias_block(sectors),
         }
 
     def _format_intermediate(self, sectors: list[dict]) -> dict[str, Any]:
@@ -142,6 +144,7 @@ class SectorRotationHandler(BaseCardHandler):
                 for s in sectors
             ],
             "insights": self._generate_insights(sectors),
+            "bias_block": self._build_bias_block(sectors),
         }
 
     def _format_advanced(self, sectors: list[dict]) -> dict[str, Any]:
@@ -155,6 +158,7 @@ class SectorRotationHandler(BaseCardHandler):
                 "breadth_pct": self._calc_breadth(sectors),
             },
             "rotation_type": self._detect_rotation_type(sectors),
+            "bias_block": self._build_bias_block(sectors),
         }
 
     def _sector_emoji(self, symbol: str) -> str:
@@ -193,6 +197,26 @@ class SectorRotationHandler(BaseCardHandler):
             return "Selective Rotation (mixed)"
         else:
             return "Defensive Shift (risk aversion)"
+
+    def _build_bias_block(self, sectors: list[dict]) -> dict[str, Any]:
+        """Construct bias from sector performance dispersion."""
+        positives = [s for s in sectors if s.get("r_1d_pct") and s["r_1d_pct"] > 0]
+        total = len([s for s in sectors if s.get("r_1d_pct") is not None])
+        pct_positive = (len(positives) / total) if total else 0
+        if pct_positive >= 0.7:
+            bias = "risk_on"
+        elif pct_positive <= 0.3:
+            bias = "risk_off"
+        else:
+            bias = "neutral"
+        focus = (
+            "growth leadership"
+            if any(s.get("symbol") == "XLK" and (s.get("r_1d_pct") or 0) > 0 for s in sectors)
+            else "defensive tilt"
+            if any(s.get("symbol") in ("XLU", "XLP") and (s.get("r_1d_pct") or 0) > 0 for s in sectors)
+            else "mixed"
+        )
+        return {"bias": bias, "focus": focus, "guardrails": "Rotate as leadership changes intraday"}
 
     def _generate_insights(self, sectors: list[dict]) -> list[str]:
         """Generate trading insights."""

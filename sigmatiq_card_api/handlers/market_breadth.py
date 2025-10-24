@@ -120,6 +120,7 @@ class MarketBreadthHandler(BaseCardHandler):
             "declining": declining,
             "ad_label": f"{advancing} stocks up, {declining} stocks down",
             "educational_tip": self._add_educational_tip("market_breadth", CardMode.beginner),
+            "bias_block": self._build_bias_block(pct_above_ma50, None, new_highs, new_lows),
         }
 
     def _format_intermediate(
@@ -150,7 +151,25 @@ class MarketBreadthHandler(BaseCardHandler):
             "interpretation": self._get_intermediate_interpretation(
                 pct_above_ma50, ad_ratio, new_highs, new_lows
             ),
+            "bias_block": self._build_bias_block(pct_above_ma50, ad_ratio, new_highs, new_lows),
         }
+
+    def _build_bias_block(
+        self, pct_above_ma50: float, ad_ratio: Optional[float], new_highs: int, new_lows: int
+    ) -> dict[str, Any]:
+        """Construct a simple risk bias from breadth metrics."""
+        bias = "neutral"
+        focus = "stock-picking; favor RS leaders"
+        guardrails = "Reduce risk if new lows expand intraday"
+        if pct_above_ma50 > 60 and (ad_ratio is None or ad_ratio > 1.0) and new_highs >= new_lows:
+            bias = "risk_on"
+            focus = "favor long continuation; growth/tech if leaders"
+            guardrails = "If AD ratio < 1 by midday, scale back risk"
+        elif pct_above_ma50 < 40 and (ad_ratio is None or ad_ratio < 1.0) and new_lows > new_highs:
+            bias = "risk_off"
+            focus = "defensive; avoid new longs; tighten stops"
+            guardrails = "Only take A+ setups with small size"
+        return {"bias": bias, "focus": focus, "guardrails": guardrails}
 
     def _format_advanced(self, row: Any) -> dict[str, Any]:
         """Format for advanced mode (all fields, no labels)."""
