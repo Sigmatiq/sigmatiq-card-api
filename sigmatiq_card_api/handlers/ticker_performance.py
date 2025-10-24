@@ -91,6 +91,11 @@ class TickerPerformanceHandler(BaseCardHandler):
                 volume=volume,
                 rvol=rvol,
                 rsi_14=rsi_14,
+                atr_pct=atr_pct,
+                dist_ma20=dist_ma20,
+                dist_ma50=dist_ma50,
+                macd=macd,
+                macd_signal=macd_signal,
             )
 
         elif mode == CardMode.intermediate:
@@ -119,6 +124,11 @@ class TickerPerformanceHandler(BaseCardHandler):
         volume: int,
         rvol: float,
         rsi_14: float,
+        atr_pct: float,
+        dist_ma20: float,
+        dist_ma50: float,
+        macd: float,
+        macd_signal: float,
     ) -> dict[str, Any]:
         """Format for beginner mode (simplified, plain language)."""
         # Determine price direction
@@ -158,13 +168,63 @@ class TickerPerformanceHandler(BaseCardHandler):
             "symbol": symbol,
             "price": close,
             "price_change_pct": r_1d_pct,
-            "price_label": f"{price_emoji} {abs(r_1d_pct):.2f}% {price_direction} today",
+            "price_label": f"{r_1d_pct:+.2f}% {price_direction} today",
             "volume": volume,
             "volume_status": volume_status,
             "volume_label": volume_label,
             "momentum": momentum,
             "momentum_label": momentum_label,
             "educational_tip": self._add_educational_tip("ticker_performance", CardMode.beginner),
+            "action_block": self._build_action_block_beginner(
+                symbol=symbol,
+                rsi_14=rsi_14,
+                atr_pct=atr_pct,
+                dist_ma20=dist_ma20,
+                dist_ma50=dist_ma50,
+                macd=macd,
+                macd_signal=macd_signal,
+                rvol=rvol,
+            ),
+        }
+
+    def _build_action_block_beginner(
+        self,
+        symbol: str,
+        rsi_14: float,
+        atr_pct: float,
+        dist_ma20: float,
+        dist_ma50: float,
+        macd: float,
+        macd_signal: float,
+        rvol: float,
+    ) -> dict[str, Any]:
+        """Create a simple action block for beginners."""
+        trend_up = dist_ma20 > 0 and dist_ma50 > 0
+        momentum_ok = rsi_14 >= 50 and macd >= macd_signal
+        entry = (
+            "Buy pullback to 20-day average with RSI>50"
+            if trend_up and momentum_ok
+            else "Wait for reclaim of 20-day average with RSI>50"
+        )
+        invalidation = "Below 20-day average − ~1×ATR"
+        stop_pct = atr_pct if atr_pct and atr_pct > 0 else 1.0
+        sizing_hint = f"If risking 1%, position size ≈ 1% / {stop_pct:.1f}%"
+        confidence = 80 if trend_up and momentum_ok else 55 if trend_up else 40
+        post_check = (
+            "Confirm relative volume ≥ 1.0 today; avoid if liquidity weak"
+            if rvol is not None
+            else "Confirm volume pace before entry"
+        )
+        return {
+            "entry": entry,
+            "invalidation": invalidation,
+            "risk": {
+                "atr_pct": round(stop_pct, 2),
+                "sizing_hint": sizing_hint,
+            },
+            "targets": ["+1R", "+2R"],
+            "confidence": confidence,
+            "post_check": post_check,
         }
 
     def _format_intermediate(

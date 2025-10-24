@@ -90,10 +90,12 @@ class TickerTrendHandler(BaseCardHandler):
         return {
             "symbol": symbol,
             "price": f"${close:.2f}",
-            "trend": trend_labels[trend],
+            "trend": self._clean_trend_label(trend),
             "explanation": trend_explanations[trend],
             "what_to_do": trend_advice[trend],
             "tip": self._add_educational_tip("ticker_trend", CardMode.beginner),
+            "trend_clean": self._clean_trend_label(trend),
+            "action_block": self._build_action_block_basic(trend),
         }
 
     def _format_intermediate(self, symbol: str, row: asyncpg.Record) -> dict[str, Any]:
@@ -131,6 +133,7 @@ class TickerTrendHandler(BaseCardHandler):
             "signals": self._generate_trend_signals(
                 dist_ma20, dist_ma50, dist_ma200, rsi_14, macd_hist
             ),
+            "action_block": self._build_action_block_intermediate(dist_ma20, dist_ma50, rsi_14, macd_hist),
         }
 
     def _format_advanced(self, symbol: str, row: asyncpg.Record) -> dict[str, Any]:
@@ -211,6 +214,67 @@ class TickerTrendHandler(BaseCardHandler):
             return "Bearish (price below all MAs)"
         else:
             return "Mixed (no clear alignment)"
+
+    def _clean_trend_label(self, trend: str) -> str:
+        """Return a clean ASCII trend label for the given trend key."""
+        mapping = {
+            "strong_up": "Strong Uptrend",
+            "up": "Uptrend",
+            "neutral": "Sideways",
+            "down": "Downtrend",
+            "strong_down": "Strong Downtrend",
+        }
+        return mapping.get(trend, trend)
+
+    def _build_action_block_basic(self, trend: str) -> dict[str, Any]:
+        """Basic action guidance by trend category."""
+        if trend in ("strong_up", "up"):
+            return {
+                "entry": "Buy pullbacks in trend",
+                "invalidation": "Lose 20-day with momentum rollover",
+                "risk_note": "Use ATR-based stops",
+                "targets": ["+1R", "+2R"],
+                "confidence": 70 if trend == "up" else 80,
+            }
+        if trend in ("strong_down", "down"):
+            return {
+                "entry": "Avoid longs; if shorting, sell rallies into resistance",
+                "invalidation": "Reclaim of 20-day",
+                "risk_note": "Define risk strictly",
+                "targets": ["+1R"],
+                "confidence": 70 if trend == "down" else 80,
+            }
+        return {
+            "entry": "Wait for breakout from range",
+            "invalidation": "N/A",
+            "risk_note": "No edge in sideways markets",
+            "targets": [],
+            "confidence": 50,
+        }
+
+    def _build_action_block_intermediate(
+        self,
+        dist_ma20: Optional[float],
+        dist_ma50: Optional[float],
+        rsi_14: Optional[float],
+        macd_hist: Optional[float],
+    ) -> dict[str, Any]:
+        """Action guidance with simple confluence scoring."""
+        trend_up = (dist_ma20 or 0) > 0 and (dist_ma50 or 0) > 0
+        momentum_ok = (rsi_14 or 0) >= 50 and (macd_hist or 0) > 0
+        entry = (
+            "Buy pullback to 20-day with RSI>50"
+            if trend_up and momentum_ok
+            else "Wait for reclaim of 20-day with momentum turn"
+        )
+        confidence = 80 if trend_up and momentum_ok else 55 if trend_up else 40
+        return {
+            "entry": entry,
+            "invalidation": "Below 20-day − ~1×ATR",
+            "risk_note": "Use ATR% for sizing (1%/stop%)",
+            "targets": ["+1R", "+2R"],
+            "confidence": confidence,
+        }
 
     def _detect_macd_cross(
         self,

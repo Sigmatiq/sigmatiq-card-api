@@ -94,6 +94,11 @@ class VolumeProfileHandler(BaseCardHandler):
             "volume_vs_avg": f"{rvol:.1f}x",
             "explanation": explanation,
             "signal": signal,
+            "sizing_hint": (
+                "Reduce size; high relative volume can increase volatility" if rvol >= 2.0 else
+                "Be cautious; low relative volume may mean poor fills" if rvol < 0.75 else
+                "Normal sizing"
+            ),
             "tip": "High volume confirms price moves. Low volume moves are less reliable.",
         }
 
@@ -130,6 +135,11 @@ class VolumeProfileHandler(BaseCardHandler):
             },
             "patterns": patterns,
             "signals": self._generate_volume_signals(rvol, r_1d_pct, dist_ma20),
+            "sizing_hint": (
+                "Reduce size in high volume/volatility contexts" if (rvol or 0) >= 2.0 else
+                "Caution: low relative volume may reduce liquidity" if (rvol or 1.0) < 0.75 else
+                "Normal sizing"
+            ),
         }
 
     def _format_advanced(self, symbol: str, row: asyncpg.Record) -> dict[str, Any]:

@@ -80,6 +80,7 @@ class MarketRegimeHandler(BaseCardHandler):
             "description": regime_descriptions.get(regime_code, "Unknown regime type."),
             "what_to_do": regime_tips.get(regime_code, "Proceed with caution."),
             "tip": self._add_educational_tip("market_regime", CardMode.beginner),
+            "bias_block": self._build_bias_block(regime_code),
         }
 
     def _format_intermediate(self, regime_code: str, features: dict) -> dict[str, Any]:
@@ -94,6 +95,7 @@ class MarketRegimeHandler(BaseCardHandler):
             },
             "interpretation": self._interpret_regime(regime_code),
             "trading_style": self._suggest_trading_style(regime_code),
+            "bias_block": self._build_bias_block(regime_code),
         }
 
     def _format_advanced(
@@ -104,7 +106,20 @@ class MarketRegimeHandler(BaseCardHandler):
             "regime": regime_code,
             "features": features,
             "raw_data": dict(row),
+            "bias_block": self._build_bias_block(regime_code),
         }
+
+    def _build_bias_block(self, regime_code: str) -> dict[str, Any]:
+        """Construct a simple bias from regime code."""
+        mapping = {
+            "TREND": ("risk_on", "trend following"),
+            "MEAN_REVERT": ("neutral", "mean reversion"),
+            "NEUTRAL": ("neutral", "stock-picking"),
+            "VOLATILE": ("risk_off", "defensive"),
+            "LOW_VOL": ("neutral", "accumulation"),
+        }
+        bias, focus = mapping.get(regime_code, ("neutral", "balanced"))
+        return {"bias": bias, "focus": focus, "guardrails": "Adjust size to volatility"}
 
     def _interpret_regime(self, regime_code: str) -> str:
         """Get regime interpretation for intermediate users."""

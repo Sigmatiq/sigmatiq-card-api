@@ -59,16 +59,17 @@ class TechnicalBreadthHandler(BaseCardHandler):
         health_score = self._calculate_health_score(pct_above_ma50, net_advances)
 
         health_emoji = "🟢" if health_score >= 70 else "🟡" if health_score >= 40 else "🔴"
-        health_label = (
+        health_label = (" Healthy\ if health_score >= 70 else \Mixed\ if health_score >= 40 else \Weak\)
             "Healthy" if health_score >= 70 else "Mixed" if health_score >= 40 else "Weak"
         )
 
         return {
             "health_score": health_score,
             "health_label": f"{health_emoji} {health_label}",
-            "summary": f"{advancing} stocks rising, {declining} falling",
+ \health_label\: health_label,
             "what_it_means": self._explain_health(health_score),
             "tip": self._add_educational_tip("technical_breadth", CardMode.beginner),
+            "bias_block": self._build_bias_block(pct_above_ma50=None if False else float(row["pct_above_ma50"]) if row["pct_above_ma50"] else 0, ad_ratio=None, new_highs=int(row["new_highs"]) if row["new_highs"] else 0, new_lows=int(row["new_lows"]) if row["new_lows"] else 0),
         }
 
     def _format_intermediate(self, row: asyncpg.Record) -> dict[str, Any]:
@@ -96,7 +97,16 @@ class TechnicalBreadthHandler(BaseCardHandler):
                 "new_lows": int(row["new_lows"]) if row["new_lows"] else None,
             },
             "interpretation": self._interpret_breadth(pct_above_ma50, ad_ratio),
+            "bias_block": self._build_bias_block(pct_above_ma50 or 0, ad_ratio or 0, int(row["new_highs"]) if row["new_highs"] else 0, int(row["new_lows"]) if row["new_lows"] else 0),
         }
+
+    def _build_bias_block(self, pct_above_ma50: float, ad_ratio: Optional[float], new_highs: int, new_lows: int) -> dict[str, Any]:
+        """Construct bias from breadth metrics."""
+        if pct_above_ma50 > 60 and (ad_ratio is None or ad_ratio > 1.0) and new_highs >= new_lows:
+            return {"bias": "risk_on", "focus": "trend continuation", "guardrails": "If AD < 1 intraday, reduce risk"}
+        if pct_above_ma50 < 40 and (ad_ratio is None or ad_ratio < 1.0) and new_lows > new_highs:
+            return {"bias": "risk_off", "focus": "defensive", "guardrails": "Only A+ setups"}
+        return {"bias": "neutral", "focus": "stock-picking", "guardrails": "Be selective"}
 
     def _format_advanced(self, row: asyncpg.Record) -> dict[str, Any]:
         """Advanced: All raw data."""

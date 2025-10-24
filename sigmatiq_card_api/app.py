@@ -5,6 +5,7 @@ Provides pre-formatted market data cards for UI integration.
 """
 
 import logging
+from urllib.parse import urlparse
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -34,8 +35,19 @@ async def lifespan(app: FastAPI):
     # Startup
     settings = get_settings()
     logger.info(f"Starting Sigmatiq Card API on port {settings.api_port}")
-    logger.info(f"Cards DB: {settings.cards_database_url}")
-    logger.info(f"Backfill DB: {settings.backfill_database_url}")
+
+    def _mask_db(url: str) -> str:
+        try:
+            p = urlparse(url)
+            host = p.hostname or "?"
+            db = (p.path or "/").lstrip("/") or "?"
+            port = f":{p.port}" if p.port else ""
+            return f"{host}{port}/{db}"
+        except Exception:
+            return "(unavailable)"
+
+    logger.info(f"Cards DB: {_mask_db(settings.cards_database_url)}")
+    logger.info(f"Backfill DB: {_mask_db(settings.backfill_database_url)}")
 
     yield
 
